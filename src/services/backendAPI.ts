@@ -16,7 +16,7 @@ import type {
   GetUsersParams
 } from '../types/api';
 
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = 'https://api.quarto.affell.fr';
 
 class QuartoBackendAPI {
   private token: string | null = null;
@@ -157,7 +157,7 @@ class QuartoBackendAPI {
   // WebSocket - Nouveau format avec game_id uniquement et token
   createWebSocket(gameId: string): WebSocket {
     // Construction de l'URL WebSocket avec le token et game_id
-    let wsUrl = `ws://localhost:5000/ws?game_id=${gameId}`;
+    let wsUrl = `wss://api.quarto.affell.fr/ws?game_id=${gameId}`;
     
     // Ajouter le token dans l'URL car les WebSockets ne supportent pas les headers personnalisés
     if (this.token) {

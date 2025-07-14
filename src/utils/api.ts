@@ -69,7 +69,7 @@ export class LocalQuartoEngine implements QuartoAPI {
 export class RemoteQuartoAPI implements QuartoAPI {
   private baseUrl: string;
   
-  constructor(baseUrl: string = 'https://api.quarto-engine.com') {
+  constructor(baseUrl: string = 'https://api.quarto.affell.fr') {
     this.baseUrl = baseUrl;
   }
   

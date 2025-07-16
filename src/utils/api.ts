@@ -1,12 +1,14 @@
 import type { Piece, Board } from '../types/quarto';
-import { boardToFEN, pieceToNotation, type QuartoMove } from './notation';
+import { pieceToNotation, type QuartoMove } from './notation';
+import config from '../config';
 
 // Interface pour l'API externe de Quarto
 export interface QuartoAPI {
   // Obtenir le meilleur coup pour l'ordinateur
-  getBestMove(board: Board, availablePieces: Piece[], history: QuartoMove[]): Promise<{
-    selectedPiece: Piece | null; // Pièce à sélectionner pour l'adversaire
-    position: string | null; // Position où placer la pièce (si on doit jouer)
+  getBestMove(board: Board, availablePieces: Piece[], history: QuartoMove[], depth?: number, selectedPiece?: Piece | null): Promise<{
+    position: string | null; // Position où placer la pièce sélectionnée
+    suggestedPiece: Piece | null; // Pièce suggérée pour l'adversaire
+    score?: number; // Score d'évaluation du coup
   }>;
   
   // Analyser une position
@@ -21,14 +23,16 @@ export class LocalQuartoEngine implements QuartoAPI {
   async getBestMove(
     board: Board, 
     availablePieces: Piece[], 
-    history: QuartoMove[]
-  ): Promise<{ selectedPiece: Piece | null; position: string | null }> {
+    history: QuartoMove[],
+    depth: number = 3,
+    selectedPiece?: Piece | null
+  ): Promise<{ position: string | null; suggestedPiece: Piece | null; score?: number }> {
     history;
+    depth;
+    selectedPiece;
+    
     // Simulation d'un délai d'API
     await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Pour l'instant, sélection aléatoire (à remplacer par une vraie IA)
-    const randomPiece = availablePieces[Math.floor(Math.random() * availablePieces.length)];
     
     // Trouver une position aléatoire vide
     const emptyPositions: string[] = [];
@@ -44,9 +48,13 @@ export class LocalQuartoEngine implements QuartoAPI {
     
     const randomPosition = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
     
+    // Sélectionner une pièce aléatoire pour l'adversaire
+    const suggestedPiece = availablePieces[Math.floor(Math.random() * availablePieces.length)];
+    
     return {
-      selectedPiece: randomPiece,
-      position: randomPosition
+      position: randomPosition,
+      suggestedPiece,
+      score: Math.floor(Math.random() * 100) // Score simulé
     };
   }
   
@@ -65,30 +73,39 @@ export class LocalQuartoEngine implements QuartoAPI {
   }
 }
 
-// API externe (exemple avec un service hypothétique)
+// API externe utilisant l'endpoint AI /ai/solve
 export class RemoteQuartoAPI implements QuartoAPI {
   private baseUrl: string;
   
-  constructor(baseUrl: string = 'https://api.quarto.affell.fr') {
+  constructor(baseUrl: string = config.apiBaseUrl) {
     this.baseUrl = baseUrl;
   }
   
   async getBestMove(
     board: Board, 
     availablePieces: Piece[], 
-    history: QuartoMove[]
-  ): Promise<{ selectedPiece: Piece | null; position: string | null }> {
+    history: QuartoMove[],
+    depth: number = 6,
+    selectedPiece?: Piece | null
+  ): Promise<{ position: string | null; suggestedPiece: Piece | null; score?: number }> {
     try {
-      const response = await fetch(`${this.baseUrl}/best-move`, {
+      // Construire le corps de la requête
+      const requestBody: any = {
+        history: history.map(m => m.notation),
+        depth: Math.max(1, Math.min(16, depth)) // Limiter entre 1 et 16
+      };
+
+      // Ajouter la pièce sélectionnée si elle existe
+      if (selectedPiece) {
+        requestBody.selected_piece = selectedPiece.id;
+      }
+
+      const response = await fetch(`${this.baseUrl}/ai/solve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          board: boardToFEN(board),
-          availablePieces: availablePieces.map(p => pieceToNotation(p)),
-          history: history.map(m => m.notation),
-        }),
+        body: JSON.stringify(requestBody),
       });
       
       if (!response.ok) {
@@ -96,17 +113,47 @@ export class RemoteQuartoAPI implements QuartoAPI {
       }
       
       const data = await response.json();
-      return {
-        selectedPiece: data.selectedPiece ? 
-          availablePieces.find(p => pieceToNotation(p) === data.selectedPiece) || null : null,
-        position: data.position || null
-      };
+      console.log('🤖 API Response received:', data);
+      
+      // Parse la réponse de l'IA
+      if (data.best_move) {
+        // Extraire la position du best_move (format: "BCGP-a1")
+        const position = this.extractPositionFromBestMove(data.best_move);
+        console.log('📍 Extracted position:', position);
+        
+        // Trouver la pièce suggérée pour l'adversaire
+        let suggestedPiece: Piece | null = null;
+        if (data.suggested_piece) {
+          suggestedPiece = availablePieces.find(p => p.id === data.suggested_piece) || null;
+          console.log('🎯 Found suggested piece:', suggestedPiece);
+        }
+        
+        const result = {
+          position,
+          suggestedPiece,
+          score: data.score || 0
+        };
+        console.log('✅ Final getBestMove result:', result);
+        return result;
+      }
+      
+      console.log('❌ No best_move in response');
+      return { position: null, suggestedPiece: null, score: 0 };
     } catch (error) {
       console.error('Remote API failed, falling back to local engine:', error);
       // Fallback vers l'engine local
       const localEngine = new LocalQuartoEngine();
-      return localEngine.getBestMove(board, availablePieces, history);
+      return localEngine.getBestMove(board, availablePieces, history, depth, selectedPiece);
     }
+  }
+  
+  private extractPositionFromBestMove(bestMove: string): string | null {
+    // Format attendu: "BCGP-a1" -> extraire "a1"
+    const parts = bestMove.split('-');
+    if (parts.length !== 2) {
+      return null;
+    }
+    return parts[1]; // Retourner la position (ex: "a1")
   }
   
   async analyzePosition(
@@ -114,22 +161,14 @@ export class RemoteQuartoAPI implements QuartoAPI {
     availablePieces: Piece[]
   ): Promise<{ evaluation: number; bestMoves: string[] }> {
     try {
-      const response = await fetch(`${this.baseUrl}/analyze`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          board: boardToFEN(board),
-          availablePieces: availablePieces.map(p => pieceToNotation(p)),
-        }),
-      });
+      // Évaluation simplifiée côté client pour l'instant
+      board;
+      availablePieces;
       
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
-      }
+      const evaluation = (Math.random() - 0.5) * 2; // Entre -1 et 1
+      const bestMoves = availablePieces.slice(0, 3).map(piece => pieceToNotation(piece));
       
-      return await response.json();
+      return { evaluation, bestMoves };
     } catch (error) {
       console.error('Remote API failed, falling back to local engine:', error);
       const localEngine = new LocalQuartoEngine();

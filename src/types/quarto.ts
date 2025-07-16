@@ -26,6 +26,7 @@ export interface GameState {
   gameOver: boolean;
   moveHistory: string[]; // Historique des coups en notation algébrique
   useRemoteAPI: boolean; // Utiliser l'API externe ou le moteur local
+  aiDepth: number; // Profondeur de recherche pour l'IA (1-16)
 }
 
 export const BOARD_SIZE = 4;

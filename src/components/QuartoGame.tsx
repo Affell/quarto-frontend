@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import type { GameState, Piece } from "../types/quarto";
+import { useNavigate } from "react-router-dom";
+import type { Piece, GameState } from "../types/quarto";
 import {
   generatePieces,
   createEmptyBoard,
@@ -11,8 +11,19 @@ import { createMove, positionToCoords, MoveHistory } from "../utils/notation";
 import { createQuartoAPI } from "../utils/api";
 import "./QuartoGame.css";
 
+// Type pour l'historique des mouvements dans le composant
+interface GameMoveDisplay {
+  id: number;
+  notation: string;
+}
+
 const QuartoGame: React.FC = () => {
+  const navigate = useNavigate();
   const [moveHistory] = useState(() => new MoveHistory());
+  const [aiScore, setAiScore] = useState<number | null>(null);
+  const [gameHistoryDisplay, setGameHistoryDisplay] = useState<
+    GameMoveDisplay[]
+  >([]);
 
   const [gameState, setGameState] = useState<GameState>(() => ({
     board: createEmptyBoard(),
@@ -23,51 +34,84 @@ const QuartoGame: React.FC = () => {
     winner: null,
     gameOver: false,
     moveHistory: [],
-    useRemoteAPI: false,
+    useRemoteAPI: true,
+    aiDepth: 6,
   }));
 
   // Créer l'API selon la configuration
-  const quartoAPI = createQuartoAPI(gameState.useRemoteAPI);
+  const quartoAPI = createQuartoAPI(true);
 
   // Gestion du tour de l'ordinateur
   useEffect(() => {
     if (gameState.currentPlayer === "computer" && !gameState.gameOver) {
+      console.log("🎮 Computer turn started", {
+        gamePhase: gameState.gamePhase,
+        selectedPiece: gameState.selectedPiece,
+        availablePieces: gameState.availablePieces.length,
+      });
+
       const timer = setTimeout(async () => {
         try {
           if (gameState.gamePhase === "placePiece" && gameState.selectedPiece) {
-            // L'ordinateur place la pièce via l'API
+            console.log("🤖 Computer placing piece:", gameState.selectedPiece);
+
+            // L'ordinateur place la pièce qui lui a été donnée et choisit la suivante pour l'humain
             const apiResponse = await quartoAPI.getBestMove(
               gameState.board,
               gameState.availablePieces,
-              moveHistory.getAllMoves()
+              moveHistory.getAllMoves(),
+              gameState.aiDepth,
+              gameState.selectedPiece
             );
+
+            console.log("📡 API Response:", apiResponse);
 
             if (apiResponse.position) {
               const [row, col] = positionToCoords(apiResponse.position);
-              handleComputerMove(row, col);
+              setAiScore(apiResponse.score || null);
+              handleComputerMove(row, col, apiResponse.suggestedPiece);
+            } else {
+              console.error("❌ No valid position from API");
             }
           } else if (gameState.gamePhase === "selectPiece") {
-            // L'ordinateur sélectionne une pièce pour le joueur humain via l'API
+            console.log("🤖 Computer selecting piece for human");
+
+            // L'ordinateur choisit une pièce pour l'humain (seulement si l'ordinateur commence le jeu)
             const apiResponse = await quartoAPI.getBestMove(
               gameState.board,
               gameState.availablePieces,
-              moveHistory.getAllMoves()
+              moveHistory.getAllMoves(),
+              gameState.aiDepth,
+              null
             );
 
-            if (apiResponse.selectedPiece) {
+            console.log("📡 Selection API Response:", apiResponse);
+
+            if (apiResponse.suggestedPiece) {
+              console.log(
+                "🎯 Computer suggests piece for human:",
+                apiResponse.suggestedPiece
+              );
+
+              if (apiResponse.score !== undefined) {
+                setAiScore(apiResponse.score);
+              }
+              // L'ordinateur donne une pièce à l'humain pour qu'il commence
               setGameState((prev) => ({
                 ...prev,
-                selectedPiece: apiResponse.selectedPiece,
+                selectedPiece: apiResponse.suggestedPiece,
                 availablePieces: prev.availablePieces.filter(
-                  (p) => p.id !== apiResponse.selectedPiece!.id
+                  (p) => p.id !== apiResponse.suggestedPiece!.id
                 ),
                 currentPlayer: "human",
                 gamePhase: "placePiece",
               }));
+            } else {
+              console.error("❌ No suggested piece returned from API");
             }
           }
         } catch (error) {
-          console.error("API call failed:", error);
+          console.error("💥 API call failed:", error);
           // Fallback simple en cas d'erreur
           if (gameState.gamePhase === "selectPiece") {
             const randomPiece =
@@ -93,12 +137,37 @@ const QuartoGame: React.FC = () => {
     gameState.currentPlayer,
     gameState.gamePhase,
     gameState.gameOver,
+    gameState.selectedPiece, // Ajouté pour détecter les changements
     quartoAPI,
     moveHistory,
   ]);
 
-  const handleComputerMove = (row: number, col: number) => {
-    if (!gameState.selectedPiece || gameState.board[row][col] !== null) return;
+  const handleComputerMove = (
+    row: number,
+    col: number,
+    suggestedPiece: Piece | null
+  ) => {
+    console.log("🎯 handleComputerMove called", {
+      row,
+      col,
+      selectedPiece: gameState.selectedPiece,
+      suggestedPiece,
+      boardPosition: gameState.board[row]?.[col],
+    });
+
+    if (!gameState.selectedPiece) {
+      console.error("❌ No selected piece for computer to place!");
+      return;
+    }
+
+    if (gameState.board[row][col] !== null) {
+      console.error("❌ Position already occupied!", {
+        row,
+        col,
+        occupiedBy: gameState.board[row][col],
+      });
+      return;
+    }
 
     const newBoard = gameState.board.map((boardRow, r) =>
       boardRow.map((cell, c) =>
@@ -106,15 +175,22 @@ const QuartoGame: React.FC = () => {
       )
     );
 
+    console.log("🏁 Board updated, piece placed at", { row, col });
+
     // Créer le move avec notation algébrique
     const move = createMove(gameState.selectedPiece, row, col);
     moveHistory.addMove(move);
+
+    console.log("📝 Move recorded:", move.notation);
 
     // Vérifier la victoire
     const hasWon = checkWin(newBoard);
     const boardFull = isBoardFull(newBoard);
 
+    console.log("🔍 Game status check:", { hasWon, boardFull });
+
     if (hasWon) {
+      console.log("🏆 Computer wins!");
       setGameState((prev) => ({
         ...prev,
         board: newBoard,
@@ -124,6 +200,7 @@ const QuartoGame: React.FC = () => {
         moveHistory: [...prev.moveHistory, move.notation],
       }));
     } else if (boardFull) {
+      console.log("🤝 Game ends in draw!");
       setGameState((prev) => ({
         ...prev,
         board: newBoard,
@@ -133,25 +210,50 @@ const QuartoGame: React.FC = () => {
         moveHistory: [...prev.moveHistory, move.notation],
       }));
     } else {
-      // L'ordinateur a joué, maintenant il doit sélectionner une pièce pour le joueur
-      setGameState((prev) => ({
-        ...prev,
-        board: newBoard,
-        selectedPiece: null,
-        gamePhase: "selectPiece",
-        currentPlayer: "computer", // L'ordinateur reste actif pour sélectionner
-        moveHistory: [...prev.moveHistory, move.notation],
-      }));
+      // L'ordinateur a joué et a choisi une pièce pour l'humain
+      if (suggestedPiece) {
+        console.log("🎁 Computer gives piece to human:", suggestedPiece);
+        setGameState((prev) => ({
+          ...prev,
+          board: newBoard,
+          selectedPiece: suggestedPiece,
+          availablePieces: prev.availablePieces.filter(
+            (p) => p.id !== suggestedPiece.id
+          ),
+          gamePhase: "placePiece",
+          currentPlayer: "human", // L'humain doit placer la pièce choisie par l'ordinateur
+          moveHistory: [...prev.moveHistory, move.notation],
+        }));
+      } else {
+        console.log("⚠️ No suggested piece, human must select");
+        // Fallback : l'humain doit choisir une pièce pour l'ordinateur
+        setGameState((prev) => ({
+          ...prev,
+          board: newBoard,
+          selectedPiece: null,
+          gamePhase: "selectPiece",
+          currentPlayer: "human",
+          moveHistory: [...prev.moveHistory, move.notation],
+        }));
+      }
     }
   };
 
   const selectPiece = (piece: Piece) => {
+    console.log("👤 Human selecting piece:", piece);
+
     if (
       gameState.gamePhase !== "selectPiece" ||
       gameState.currentPlayer !== "human"
-    )
+    ) {
+      console.log("❌ Cannot select piece:", {
+        gamePhase: gameState.gamePhase,
+        currentPlayer: gameState.currentPlayer,
+      });
       return;
+    }
 
+    console.log("✅ Human selected piece for computer:", piece);
     setGameState((prev) => ({
       ...prev,
       selectedPiece: piece,
@@ -162,12 +264,32 @@ const QuartoGame: React.FC = () => {
   };
 
   const placePiece = (row: number, col: number) => {
+    console.log("👤 Human placing piece at:", { row, col });
+    console.log("Current game state:", {
+      gamePhase: gameState.gamePhase,
+      currentPlayer: gameState.currentPlayer,
+      selectedPiece: gameState.selectedPiece,
+      positionOccupied: gameState.board[row][col],
+    });
+
     if (
       !gameState.selectedPiece ||
       gameState.board[row][col] !== null ||
       gameState.currentPlayer !== "human"
-    )
+    ) {
+      console.log("❌ Cannot place piece:", {
+        hasSelectedPiece: !!gameState.selectedPiece,
+        positionFree: gameState.board[row][col] === null,
+        isHumanTurn: gameState.currentPlayer === "human",
+      });
       return;
+    }
+
+    console.log("✅ Human placing piece:", {
+      piece: gameState.selectedPiece,
+      row,
+      col,
+    });
 
     const newBoard = gameState.board.map((boardRow, r) =>
       boardRow.map((cell, c) =>
@@ -179,11 +301,19 @@ const QuartoGame: React.FC = () => {
     const move = createMove(gameState.selectedPiece, row, col);
     moveHistory.addMove(move);
 
+    console.log("📝 Human move recorded:", move.notation);
+
     // Vérifier la victoire
     const hasWon = checkWin(newBoard);
     const boardFull = isBoardFull(newBoard);
 
+    console.log("🔍 Game status check after human move:", {
+      hasWon,
+      boardFull,
+    });
+
     if (hasWon) {
+      console.log("🎉 Game won by human!");
       setGameState((prev) => ({
         ...prev,
         board: newBoard,
@@ -193,6 +323,7 @@ const QuartoGame: React.FC = () => {
         moveHistory: [...prev.moveHistory, move.notation],
       }));
     } else if (boardFull) {
+      console.log("🤝 Game ended in draw");
       setGameState((prev) => ({
         ...prev,
         board: newBoard,
@@ -203,6 +334,7 @@ const QuartoGame: React.FC = () => {
       }));
     } else {
       // Le joueur a joué, maintenant il doit sélectionner une pièce pour l'ordinateur
+      console.log("🔄 Game continues - human must select piece for computer");
       setGameState((prev) => ({
         ...prev,
         board: newBoard,
@@ -216,6 +348,8 @@ const QuartoGame: React.FC = () => {
 
   const resetGame = () => {
     moveHistory.clear();
+    setAiScore(null);
+    setGameHistoryDisplay([]);
     setGameState({
       board: createEmptyBoard(),
       availablePieces: generatePieces(),
@@ -225,43 +359,49 @@ const QuartoGame: React.FC = () => {
       winner: null,
       gameOver: false,
       moveHistory: [],
-      useRemoteAPI: false,
+      useRemoteAPI: true,
+      aiDepth: 6,
     });
+  };
+
+  const leaveGame = () => {
+    navigate("/");
   };
 
   const renderBoard = () => {
     return (
       <div className="board">
         {gameState.board.map((row, rowIndex) =>
-          row.map((piece, colIndex) => (
-            <div
-              key={`${rowIndex}-${colIndex}`}
-              className={`board-cell ${
-                !piece &&
-                gameState.selectedPiece &&
-                gameState.currentPlayer === "human" &&
-                gameState.gamePhase === "placePiece"
-                  ? "placeable"
-                  : ""
-              }`}
-              onClick={() => {
-                if (
-                  gameState.gamePhase === "placePiece" &&
-                  gameState.currentPlayer === "human"
-                ) {
-                  placePiece(rowIndex, colIndex);
-                }
-              }}
-            >
-              {piece && (
-                <img
-                  src={piece.image}
-                  alt={`${piece.color} ${piece.shape} ${piece.size} ${piece.fill}`}
-                  className="piece-image"
-                />
-              )}
-            </div>
-          ))
+          row.map((piece, colIndex) => {
+            const isPlaceable =
+              !piece &&
+              gameState.selectedPiece &&
+              gameState.currentPlayer === "human" &&
+              gameState.gamePhase === "placePiece";
+
+            return (
+              <div
+                key={`${rowIndex}-${colIndex}`}
+                className={`board-cell ${isPlaceable ? "can-place" : ""}`}
+                onClick={() => {
+                  if (
+                    gameState.gamePhase === "placePiece" &&
+                    gameState.currentPlayer === "human"
+                  ) {
+                    placePiece(rowIndex, colIndex);
+                  }
+                }}
+              >
+                {piece && (
+                  <img
+                    src={piece.image}
+                    alt={`${piece.color} ${piece.shape} ${piece.size} ${piece.fill}`}
+                    className="piece-image"
+                  />
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     );
@@ -269,13 +409,13 @@ const QuartoGame: React.FC = () => {
 
   const renderPieces = () => {
     return (
-      <div className="pieces-container">
+      <div className="pieces-section">
         <h3>Pièces disponibles</h3>
         <div className="pieces-grid">
           {gameState.availablePieces.map((piece) => (
             <div
               key={piece.id}
-              className={`piece ${
+              className={`piece-card ${
                 gameState.gamePhase === "selectPiece" &&
                 gameState.currentPlayer === "human"
                   ? "selectable"
@@ -316,74 +456,170 @@ const QuartoGame: React.FC = () => {
     }
   };
 
-  return (
-    <div className="quarto-game">
-      <div className="game-header">
-        <h1>Quarto</h1>
-        <Link to="/" className="home-link">
-          ← Retour à l'accueil
-        </Link>
-        <div className="game-status">
-          <p>{getGameStatusMessage()}</p>
-          {gameState.selectedPiece && (
-            <div className="selected-piece">
-              <span>Pièce sélectionnée:</span>
-              <img
-                src={gameState.selectedPiece.image}
-                alt="Pièce sélectionnée"
-                className="piece-image small"
-              />
-            </div>
-          )}
-        </div>
-        <button onClick={resetGame} className="reset-button">
-          Nouvelle partie
-        </button>
+  const getCurrentPlayerName = () => {
+    return gameState.currentPlayer === "human" ? "Vous" : "Ordinateur";
+  };
 
-        <div className="api-controls">
-          <label className="api-toggle">
-            <input
-              type="checkbox"
-              checked={gameState.useRemoteAPI}
-              onChange={(e) =>
-                setGameState((prev) => ({
-                  ...prev,
-                  useRemoteAPI: e.target.checked,
-                }))
-              }
-            />
-            Utiliser l'API externe
-          </label>
+  return (
+    <div className="game-container">
+      <div className="game-header">
+        <div className="game-title">
+          <h1>Quarto vs IA</h1>
         </div>
+        <button onClick={leaveGame} className="leave-btn">
+          Retour à l'accueil
+        </button>
       </div>
 
       <div className="game-content">
-        <div className="board-container">{renderBoard()}</div>
+        <div className="board-section">
+          {/* Informations des joueurs */}
+          <div className="players-container">
+            <div
+              className={`player-card ${
+                gameState.currentPlayer === "human" ? "current-player" : ""
+              }`}
+            >
+              <div className="player-avatar">V</div>
+              <div className="player-info">
+                <div className="player-name">Vous</div>
+                <div className="player-badges">
+                  <span className="you-badge">Humain</span>
+                  {gameState.currentPlayer === "human" && (
+                    <span className="turn-indicator">À jouer</span>
+                  )}
+                </div>
+              </div>
+            </div>
 
-        <div className="sidebar">
+            <div className="vs-divider">VS</div>
+
+            <div
+              className={`player-card ${
+                gameState.currentPlayer === "computer" ? "current-player" : ""
+              }`}
+            >
+              <div className="player-avatar">🤖</div>
+              <div className="player-info">
+                <div className="player-name">IA</div>
+                <div className="player-badges">
+                  <span className="you-badge">Bot</span>
+                  {gameState.currentPlayer === "computer" && (
+                    <span className="turn-indicator">À jouer</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Statut du jeu */}
+          <div className="game-status-main">
+            <p>{getGameStatusMessage()}</p>
+          </div>
+
+          {/* Pièce sélectionnée */}
+          {gameState.selectedPiece && (
+            <div className="selected-piece-display">
+              <h3>Pièce à placer</h3>
+              <div className="selected-piece-preview">
+                <img
+                  src={gameState.selectedPiece.image}
+                  alt="Pièce sélectionnée"
+                  className="piece-image"
+                />
+                <div>
+                  <strong>Pièce sélectionnée</strong>
+                  <br />
+                  <small>Cliquez sur une case libre pour la placer</small>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Score de l'IA */}
+          {gameState.useRemoteAPI && aiScore !== null && (
+            <div className="ai-score-display">
+              <h3>Évaluation IA</h3>
+              <div className="score-preview">
+                <span className="score-value">Score: {aiScore}</span>
+                <small>Profondeur: {gameState.aiDepth}</small>
+              </div>
+            </div>
+          )}
+
+          {/* Plateau de jeu */}
+          <div className="board-container">{renderBoard()}</div>
+
+          {/* Contrôles de l'IA */}
+          <div className="ai-controls">
+            <div className="ai-depth-control">
+              <label htmlFor="ai-depth">
+                Profondeur IA: {gameState.aiDepth}
+              </label>
+              <input
+                id="ai-depth"
+                type="range"
+                min="1"
+                max="16"
+                value={gameState.aiDepth}
+                onChange={(e) =>
+                  setGameState((prev) => ({
+                    ...prev,
+                    aiDepth: parseInt(e.target.value),
+                  }))
+                }
+                disabled={
+                  gameState.currentPlayer === "computer" && !gameState.gameOver
+                }
+              />
+              <div className="depth-labels">
+                <span>Rapide</span>
+                <span>Équilibré</span>
+                <span>Fort</span>
+              </div>
+            </div>
+            <button onClick={resetGame} className="reset-button">
+              Nouvelle partie
+            </button>
+          </div>
+        </div>
+
+        <div className="game-sidebar">
           {renderPieces()}
 
-          {/* Historique des coups */}
           <div className="move-history">
             <h3>Historique des coups</h3>
             <div className="history-content">
-              {gameState.moveHistory.length === 0 ? (
+              {gameHistoryDisplay.length === 0 ? (
                 <p className="no-moves">Aucun coup joué</p>
               ) : (
                 <div className="moves-list">
-                  {gameState.moveHistory.map((move, index) => (
-                    <div key={index} className="move-item">
+                  {gameHistoryDisplay.map((move, index) => (
+                    <div key={move.id} className="move-item">
                       <span className="move-number">{index + 1}.</span>
-                      <span className="move-notation">{move}</span>
+                      <span className="move-notation">{move.notation}</span>
                     </div>
                   ))}
                 </div>
               )}
-              {gameState.moveHistory.length > 0 && (
-                <div className="pgn-notation">
-                  <strong>PGN:</strong> {moveHistory.toPGN()}
-                </div>
-              )}
+            </div>
+          </div>
+
+          <div className="game-details">
+            <h3>Informations</h3>
+            <div className="details-content">
+              <p>
+                <strong>Mode:</strong> Humain vs IA
+              </p>
+              <p>
+                <strong>Tour actuel:</strong> {getCurrentPlayerName()}
+              </p>
+              <p>
+                <strong>Coups joués:</strong> {gameHistoryDisplay.length}
+              </p>
+              <p>
+                <strong>Profondeur IA:</strong> {gameState.aiDepth}
+              </p>
             </div>
           </div>
         </div>

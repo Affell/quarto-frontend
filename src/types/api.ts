@@ -56,18 +56,30 @@ export interface ChallengeResponse {
   game?: Game;
 }
 
+// Position représente une position sur le plateau Quarto (4x4)
+export interface GamePosition {
+  row: number;
+  col: number;
+}
+
+// Move représente un mouvement complet dans Quarto (placement + sélection pour l'adversaire)
+export interface GameMove {
+  piece: number; // ID de la pièce sélectionnée par l'adversaire (0-15)
+  position: GamePosition; // Position où placer la pièce sélectionnée
+}
+
 export interface Game {
   id: string;
   player1_id: number;
   player2_id: number;
-  status: 'active' | 'finished';
-  current_turn: 'player1' | 'player2';
-  game_phase: 'selectPiece' | 'placePiece';
-  board: string; // JSON serialized 4x4 board
-  available_pieces: string; // JSON array of piece IDs
-  selected_piece: number | null; // Current piece ID to place
-  move_history: string; // JSON array of moves in notation
-  winner?: 'player1' | 'player2' | 'draw';
+  current_turn: number; // ID of the player whose turn it is
+  game_phase: number; // 0 = "selectPiece", 1 = "placePiece"
+  board: number[][]; // 4x4 matrix of Piece (numbers 0-15, -1 = empty)
+  available_pieces: number[]; // List of available pieces (0-15)
+  selected_piece: number; // Current piece to place (0-15, -1 = none)
+  status: number; // 0 = "playing", 1 = "finished"
+  winner: number; // ID of the winner (0 if draw)
+  move_history: GameMove[]; // List of moves made in the game
   created_at: string;
   updated_at: string;
 }

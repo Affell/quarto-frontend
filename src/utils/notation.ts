@@ -24,7 +24,7 @@ export const pieceToNotation = (piece: Piece): string => {
 // Convertit les coordonnées (row, col) en notation position (ex: 0,2 -> c1)
 export const coordsToPosition = (row: number, col: number): string => {
   const file = String.fromCharCode('a'.charCodeAt(0) + col); // a, b, c, d
-  const rank = (4 - row).toString(); // 4, 3, 2, 1 (rangée inversée car row 0 = rang 4)
+  const rank = (row + 1).toString(); // 1, 2, 3, 4
   return `${file}${rank}`;
 };
 
@@ -34,7 +34,7 @@ export const positionToCoords = (position: string): [number, number] => {
   const rank = position[1];
   
   const col = file.charCodeAt(0) - 'a'.charCodeAt(0); // a=0, b=1, c=2, d=3
-  const row = 4 - parseInt(rank); // 4=0, 3=1, 2=2, 1=3
+  const row = parseInt(rank) - 1; // 1=0, 2=1, 3=2, 4=3
   
   return [row, col];
 };

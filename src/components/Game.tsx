@@ -3,10 +3,16 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { backendAPI } from "../services/backendAPI";
-import type { Game, Move, User } from "../types/api";
+import type { Game, User } from "../types/api";
 import type { Piece, Board } from "../types/quarto";
 import { generatePieces, createEmptyBoard } from "../utils/gameLogic";
 import "./Game.css";
+
+// Type simple pour l'historique des mouvements dans le composant
+interface GameMoveDisplay {
+  id: number;
+  notation: string;
+}
 
 interface GameComponentProps {}
 
@@ -29,7 +35,7 @@ const GameComponent: React.FC<GameComponentProps> = () => {
     "selectPiece"
   );
   const [isMyTurn, setIsMyTurn] = useState(false);
-  const [gameHistory, setGameHistory] = useState<Move[]>([]);
+  const [gameHistory, setGameHistory] = useState<GameMoveDisplay[]>([]);
   const [spectatorMode, setSpectatorMode] = useState(false);
 
   // Fonction pour mettre à jour l'état du jeu depuis les données WebSocket
@@ -40,12 +46,16 @@ const GameComponent: React.FC<GameComponentProps> = () => {
     updateTurnState(gameData);
 
     // Mettre à jour l'historique depuis les données WebSocket
-    if (gameData.move_history) {
-      const moves = JSON.parse(gameData.move_history);
-      const formattedHistory = moves.map((notation: string, index: number) => ({
-        id: index + 1,
-        notation: notation,
-      }));
+    if (gameData.move_history && gameData.move_history.length > 0) {
+      // L'historique est maintenant directement un tableau de moves
+      const formattedHistory = gameData.move_history
+        .filter((move) => move && move.position) // Filtrer les moves valides
+        .map((move, index) => ({
+          id: index + 1,
+          notation: `P${move.piece}-${String.fromCharCode(
+            "a".charCodeAt(0) + move.position.col
+          )}${move.position.row + 1}`, // Convertir en notation
+        }));
       setGameHistory(formattedHistory);
     }
   }, []);
@@ -111,14 +121,16 @@ const GameComponent: React.FC<GameComponentProps> = () => {
         setGame(gameData);
 
         // Charger l'historique depuis les données du jeu
-        if (gameData.move_history) {
-          const moves = JSON.parse(gameData.move_history);
-          const formattedHistory = moves.map(
-            (notation: string, index: number) => ({
+        if (gameData.move_history && gameData.move_history.length > 0) {
+          // L'historique est maintenant directement un tableau de moves
+          const formattedHistory = gameData.move_history
+            .filter((move) => move && move.position) // Filtrer les moves valides
+            .map((move, index) => ({
               id: index + 1,
-              notation: notation,
-            })
-          );
+              notation: `P${move.piece}-${String.fromCharCode(
+                "a".charCodeAt(0) + move.position.col
+              )}${move.position.row + 1}`, // Convertir en notation
+            }));
           setGameHistory(formattedHistory);
         } else {
           setGameHistory([]);
@@ -161,46 +173,55 @@ const GameComponent: React.FC<GameComponentProps> = () => {
     // Générer toutes les pièces une seule fois
     const pieces = generatePieces();
 
-    // Reconstruire le plateau depuis le JSON
-    const boardData = JSON.parse(gameData.board);
-    console.log("Plateau brut depuis backend:", boardData);
+    // Le plateau est maintenant directement un tableau 4x4 d'IDs de pièces
+    console.log("Plateau brut depuis backend:", gameData.board);
 
     // Convertir les IDs du plateau en objets Piece complets
-    const reconstructedBoard: Board = boardData.map((row: any[]) =>
-      row.map((cellValue: any) => {
-        if (cellValue === null || cellValue === undefined) {
+    const reconstructedBoard: Board = gameData.board.map((row: number[]) =>
+      row.map((pieceId: number) => {
+        if (pieceId === -1) {
+          // -1 means empty cell (PieceEmpty)
           return null;
         }
-        // Si c'est un ID de pièce, trouver l'objet Piece correspondant
-        if (typeof cellValue === "number") {
-          const piece = pieces.find((p) => p.id === cellValue);
-          console.log(`Conversion ID ${cellValue} -> Pièce:`, piece);
-          return piece || null;
-        }
-        // Si c'est déjà un objet Piece, le retourner tel quel
-        return cellValue;
+        // Trouver l'objet Piece correspondant (serveur: 0-15, client: 0-15)
+        const piece = pieces.find((p) => p.id === pieceId);
+        console.log(`Conversion ID ${pieceId} -> Pièce:`, piece);
+        return piece || null;
       })
     );
 
     console.log("Plateau reconstruit:", reconstructedBoard);
     setBoard(reconstructedBoard);
 
-    // Reconstruire les pièces disponibles depuis le JSON
-    const availablePieceIds = JSON.parse(gameData.available_pieces);
-    const available = pieces.filter((p) => availablePieceIds.includes(p.id));
+    // Les pièces disponibles sont maintenant directement un tableau d'IDs (serveur: 0-15)
+    let available = pieces.filter((p) =>
+      gameData.available_pieces.includes(p.id)
+    );
+
+    // Si une pièce est sélectionnée (en phase placePiece), la retirer des pièces disponibles
+    if (gameData.selected_piece && gameData.selected_piece >= 0) {
+      available = available.filter((p) => p.id !== gameData.selected_piece);
+      console.log(
+        `Pièce sélectionnée ${gameData.selected_piece} retirée des pièces disponibles`
+      );
+    }
+
     setAvailablePieces(available);
 
     // Utiliser la phase directement depuis les données du jeu
-    if (gameData.status === "active") {
+    if (gameData.status === 0) {
+      // 0 = "playing"
       console.log("Game phase:", gameData.game_phase);
       console.log("Selected piece ID:", gameData.selected_piece);
-      setGamePhase(gameData.game_phase);
+
+      // Convertir le numéro de phase en string
+      const phaseString =
+        gameData.game_phase === 0 ? "selectPiece" : "placePiece";
+      setGamePhase(phaseString);
 
       // Gérer la pièce sélectionnée
-      if (
-        gameData.selected_piece !== null &&
-        gameData.selected_piece !== undefined
-      ) {
+      if (gameData.selected_piece && gameData.selected_piece >= 0) {
+        // Les IDs sont maintenant identiques serveur et client (0-15)
         const selected = pieces.find((p) => p.id === gameData.selected_piece);
         console.log("Pièce trouvée:", selected);
         setSelectedPiece(selected || null);
@@ -212,20 +233,14 @@ const GameComponent: React.FC<GameComponentProps> = () => {
   };
 
   const updateTurnState = (gameData: Game) => {
-    if (!user || gameData.status !== "active") {
+    if (!user || gameData.status !== 0) {
+      // 0 = "playing"
       setIsMyTurn(false);
       return;
     }
 
-    // Déterminer qui doit jouer selon current_turn
-    let currentPlayerId: number;
-    if (gameData.current_turn === "player1") {
-      currentPlayerId = gameData.player1_id;
-    } else {
-      currentPlayerId = gameData.player2_id;
-    }
-
-    setIsMyTurn(currentPlayerId === user.id);
+    // Le current_turn est maintenant directement l'ID du joueur
+    setIsMyTurn(gameData.current_turn === user.id);
   };
 
   const selectPiece = async (piece: Piece) => {
@@ -233,6 +248,7 @@ const GameComponent: React.FC<GameComponentProps> = () => {
       return;
 
     try {
+      // Les IDs sont identiques serveur et client (0-15)
       await backendAPI.selectPiece(gameId, { piece_id: piece.id });
       console.log("Pièce sélectionnée, attente de mise à jour WebSocket...");
     } catch (error) {
@@ -365,10 +381,11 @@ const GameComponent: React.FC<GameComponentProps> = () => {
   const getGameStatusMessage = () => {
     if (!game) return "";
 
-    if (game.status === "finished") {
-      if (game.winner === "player1") {
+    if (game.status === 1) {
+      // 1 = "finished"
+      if (game.winner === game.player1_id) {
         return "Le joueur 1 a gagné !";
-      } else if (game.winner === "player2") {
+      } else if (game.winner === game.player2_id) {
         return "Le joueur 2 a gagné !";
       }
       return "Match nul !";
@@ -376,7 +393,7 @@ const GameComponent: React.FC<GameComponentProps> = () => {
 
     if (spectatorMode) {
       const currentPlayerName =
-        game.current_turn === "player1" ? "Joueur 1" : "Joueur 2";
+        game.current_turn === game.player1_id ? "Joueur 1" : "Joueur 2";
       if (gamePhase === "selectPiece") {
         return `${currentPlayerName} sélectionne une pièce...`;
       } else {
@@ -397,7 +414,7 @@ const GameComponent: React.FC<GameComponentProps> = () => {
 
   const getCurrentPlayerName = () => {
     if (!game) return "";
-    if (game.current_turn === "player1") {
+    if (game.current_turn === game.player1_id) {
       return player1Info?.username || "Joueur 1";
     } else {
       return player2Info?.username || "Joueur 2";
@@ -460,7 +477,7 @@ const GameComponent: React.FC<GameComponentProps> = () => {
           <div className="players-container">
             <div
               className={`player-card ${
-                game.current_turn === "player1" ? "current-player" : ""
+                game.current_turn === game.player1_id ? "current-player" : ""
               }`}
             >
               <div className="player-avatar">
@@ -474,7 +491,7 @@ const GameComponent: React.FC<GameComponentProps> = () => {
                   {game.player1_id === user?.id && (
                     <span className="you-badge">Vous</span>
                   )}
-                  {game.current_turn === "player1" && (
+                  {game.current_turn === game.player1_id && (
                     <span className="turn-indicator">À jouer</span>
                   )}
                 </div>
@@ -485,7 +502,7 @@ const GameComponent: React.FC<GameComponentProps> = () => {
 
             <div
               className={`player-card ${
-                game.current_turn === "player2" ? "current-player" : ""
+                game.current_turn === game.player2_id ? "current-player" : ""
               }`}
             >
               <div className="player-avatar">
@@ -499,7 +516,7 @@ const GameComponent: React.FC<GameComponentProps> = () => {
                   {game.player2_id === user?.id && (
                     <span className="you-badge">Vous</span>
                   )}
-                  {game.current_turn === "player2" && (
+                  {game.current_turn === game.player2_id && (
                     <span className="turn-indicator">À jouer</span>
                   )}
                 </div>
@@ -558,9 +575,9 @@ const GameComponent: React.FC<GameComponentProps> = () => {
             <div className="details-content">
               <p>
                 <strong>Statut:</strong>{" "}
-                {game.status === "active"
+                {game.status === 0
                   ? "En cours"
-                  : game.status === "finished"
+                  : game.status === 1
                   ? "Terminée"
                   : "En attente"}
               </p>

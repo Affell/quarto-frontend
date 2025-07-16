@@ -176,17 +176,14 @@ const Dashboard: React.FC = () => {
   };
 
   const getGameStatus = (game: Game) => {
-    if (game.status === "finished") {
-      if (game.winner === "draw") return "Match nul";
-      const isWinner =
-        (game.winner === "player1" && game.player1_id === user?.id) ||
-        (game.winner === "player2" && game.player2_id === user?.id);
+    if (game.status === 1) {
+      // 1 = "finished"
+      if (game.winner === 0) return "Match nul"; // 0 = draw
+      const isWinner = game.winner === user?.id;
       return isWinner ? "Victoire" : "Défaite";
     }
 
-    const isMyTurn =
-      (game.current_turn === "player1" && game.player1_id === user?.id) ||
-      (game.current_turn === "player2" && game.player2_id === user?.id);
+    const isMyTurn = game.current_turn === user?.id;
     return isMyTurn ? "Votre tour" : "Tour de l'adversaire";
   };
 
@@ -393,7 +390,7 @@ const Dashboard: React.FC = () => {
                       <span className="game-time">
                         {formatTimeAgo(game.updated_at)}
                       </span>
-                      {game.status === "active" && (
+                      {game.status === 0 && ( // 0 = "playing"
                         <span className="continue-btn">Continuer →</span>
                       )}
                     </div>
@@ -432,7 +429,8 @@ const Dashboard: React.FC = () => {
             <div className="stat-item">
               <span className="stat-label">Parties actives</span>
               <span className="stat-value">
-                {myGames.filter((g) => g.status === "active").length}
+                {myGames.filter((g) => g.status === 0).length}{" "}
+                {/* 0 = "playing" */}
               </span>
             </div>
             <div className="stat-item">
@@ -447,7 +445,8 @@ const Dashboard: React.FC = () => {
             <div className="stat-item">
               <span className="stat-label">Parties terminées</span>
               <span className="stat-value">
-                {myGames.filter((g) => g.status === "finished").length}
+                {myGames.filter((g) => g.status === 1).length}{" "}
+                {/* 1 = "finished" */}
               </span>
             </div>
           </div>

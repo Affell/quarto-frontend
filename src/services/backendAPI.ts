@@ -15,8 +15,9 @@ import type {
   UsersListResponse,
   GetUsersParams
 } from '../types/api';
+import config from '../config';
 
-const API_BASE_URL = 'https://api.quarto.affell.fr';
+const API_BASE_URL = config.apiBaseUrl;
 
 class QuartoBackendAPI {
   private token: string | null = null;
@@ -122,8 +123,9 @@ class QuartoBackendAPI {
   }
 
   // Games
-  async getMyGames(status?: 'active' | 'finished'): Promise<Game[]> {
-    const url = status ? `/game/my?status=${status}` : '/game/my';
+  async getMyGames(status?: number): Promise<Game[]> {
+    // status: 0 = "playing", 1 = "finished"
+    const url = status !== undefined ? `/game/my?status=${status}` : '/game/my';
     return this.request<Game[]>(url, {
       method: 'GET',
     });
@@ -157,7 +159,7 @@ class QuartoBackendAPI {
   // WebSocket - Nouveau format avec game_id uniquement et token
   createWebSocket(gameId: string): WebSocket {
     // Construction de l'URL WebSocket avec le token et game_id
-    let wsUrl = `wss://api.quarto.affell.fr/ws?game_id=${gameId}`;
+    let wsUrl = `${config.wsBaseUrl}/ws?game_id=${gameId}`;
     
     // Ajouter le token dans l'URL car les WebSockets ne supportent pas les headers personnalisés
     if (this.token) {

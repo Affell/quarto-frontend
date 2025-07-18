@@ -262,7 +262,8 @@ const GameComponent: React.FC<GameComponentProps> = () => {
       !gameId ||
       !isMyTurn ||
       gamePhase !== "placePiece" ||
-      !selectedPiece ||
+      selectedPiece === null ||
+      selectedPiece === undefined ||
       spectatorMode
     )
       return;
@@ -304,7 +305,8 @@ const GameComponent: React.FC<GameComponentProps> = () => {
           row.map((piece, colIndex) => {
             const isPlaceable =
               !piece &&
-              selectedPiece &&
+              selectedPiece !== null &&
+              selectedPiece !== undefined &&
               isMyTurn &&
               gamePhase === "placePiece" &&
               !spectatorMode;
@@ -528,7 +530,7 @@ const GameComponent: React.FC<GameComponentProps> = () => {
             <p>{getGameStatusMessage()}</p>
           </div>
           {/* Pièce sélectionnée */}
-          {selectedPiece && (
+          {selectedPiece !== null && selectedPiece !== undefined && (
             <div className="selected-piece-display">
               <h3>Pièce à placer</h3>
               <div className="selected-piece-preview">

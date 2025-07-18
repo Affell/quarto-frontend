@@ -52,7 +52,10 @@ const QuartoGame: React.FC = () => {
 
       const timer = setTimeout(async () => {
         try {
-          if (gameState.gamePhase === "placePiece" && gameState.selectedPiece) {
+          if (
+            gameState.gamePhase === "placePiece" &&
+            gameState.selectedPiece !== null
+          ) {
             console.log("🤖 Computer placing piece:", gameState.selectedPiece);
 
             // L'ordinateur place la pièce qui lui a été donnée et choisit la suivante pour l'humain
@@ -87,7 +90,10 @@ const QuartoGame: React.FC = () => {
 
             console.log("📡 Selection API Response:", apiResponse);
 
-            if (apiResponse.suggestedPiece) {
+            if (
+              apiResponse.suggestedPiece !== null &&
+              apiResponse.suggestedPiece !== undefined
+            ) {
               console.log(
                 "🎯 Computer suggests piece for human:",
                 apiResponse.suggestedPiece
@@ -155,7 +161,10 @@ const QuartoGame: React.FC = () => {
       boardPosition: gameState.board[row]?.[col],
     });
 
-    if (!gameState.selectedPiece) {
+    if (
+      gameState.selectedPiece === null ||
+      gameState.selectedPiece === undefined
+    ) {
       console.error("❌ No selected piece for computer to place!");
       return;
     }
@@ -211,7 +220,7 @@ const QuartoGame: React.FC = () => {
       }));
     } else {
       // L'ordinateur a joué et a choisi une pièce pour l'humain
-      if (suggestedPiece) {
+      if (suggestedPiece !== null && suggestedPiece !== undefined) {
         console.log("🎁 Computer gives piece to human:", suggestedPiece);
         setGameState((prev) => ({
           ...prev,
@@ -273,12 +282,15 @@ const QuartoGame: React.FC = () => {
     });
 
     if (
-      !gameState.selectedPiece ||
+      gameState.selectedPiece === null ||
+      gameState.selectedPiece === undefined ||
       gameState.board[row][col] !== null ||
       gameState.currentPlayer !== "human"
     ) {
       console.log("❌ Cannot place piece:", {
-        hasSelectedPiece: !!gameState.selectedPiece,
+        hasSelectedPiece:
+          gameState.selectedPiece !== null &&
+          gameState.selectedPiece !== undefined,
         positionFree: gameState.board[row][col] === null,
         isHumanTurn: gameState.currentPlayer === "human",
       });
@@ -375,7 +387,8 @@ const QuartoGame: React.FC = () => {
           row.map((piece, colIndex) => {
             const isPlaceable =
               !piece &&
-              gameState.selectedPiece &&
+              gameState.selectedPiece !== null &&
+              gameState.selectedPiece !== undefined &&
               gameState.currentPlayer === "human" &&
               gameState.gamePhase === "placePiece";
 
@@ -518,23 +531,24 @@ const QuartoGame: React.FC = () => {
           </div>
 
           {/* Pièce sélectionnée */}
-          {gameState.selectedPiece && (
-            <div className="selected-piece-display">
-              <h3>Pièce à placer</h3>
-              <div className="selected-piece-preview">
-                <img
-                  src={gameState.selectedPiece.image}
-                  alt="Pièce sélectionnée"
-                  className="piece-image"
-                />
-                <div>
-                  <strong>Pièce sélectionnée</strong>
-                  <br />
-                  <small>Cliquez sur une case libre pour la placer</small>
+          {gameState.selectedPiece !== null &&
+            gameState.selectedPiece !== undefined && (
+              <div className="selected-piece-display">
+                <h3>Pièce à placer</h3>
+                <div className="selected-piece-preview">
+                  <img
+                    src={gameState.selectedPiece.image}
+                    alt="Pièce sélectionnée"
+                    className="piece-image"
+                  />
+                  <div>
+                    <strong>Pièce sélectionnée</strong>
+                    <br />
+                    <small>Cliquez sur une case libre pour la placer</small>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
           {/* Score de l'IA */}
           {gameState.useRemoteAPI && aiScore !== null && (

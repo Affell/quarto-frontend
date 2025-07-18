@@ -199,7 +199,11 @@ const GameComponent: React.FC<GameComponentProps> = () => {
     );
 
     // Si une pièce est sélectionnée (en phase placePiece), la retirer des pièces disponibles
-    if (gameData.selected_piece && gameData.selected_piece >= 0) {
+    if (
+      gameData.selected_piece !== null &&
+      gameData.selected_piece !== undefined &&
+      gameData.selected_piece >= 0
+    ) {
       available = available.filter((p) => p.id !== gameData.selected_piece);
       console.log(
         `Pièce sélectionnée ${gameData.selected_piece} retirée des pièces disponibles`
@@ -220,7 +224,11 @@ const GameComponent: React.FC<GameComponentProps> = () => {
       setGamePhase(phaseString);
 
       // Gérer la pièce sélectionnée
-      if (gameData.selected_piece && gameData.selected_piece >= 0) {
+      if (
+        gameData.selected_piece !== null &&
+        gameData.selected_piece !== undefined &&
+        gameData.selected_piece >= 0
+      ) {
         // Les IDs sont maintenant identiques serveur et client (0-15)
         const selected = pieces.find((p) => p.id === gameData.selected_piece);
         console.log("Pièce trouvée:", selected);

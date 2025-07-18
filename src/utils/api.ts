@@ -96,7 +96,7 @@ export class RemoteQuartoAPI implements QuartoAPI {
       };
 
       // Ajouter la pièce sélectionnée si elle existe
-      if (selectedPiece) {
+      if (selectedPiece !== null && selectedPiece !== undefined) {
         requestBody.selected_piece = selectedPiece.id;
       }
 
@@ -123,7 +123,7 @@ export class RemoteQuartoAPI implements QuartoAPI {
         
         // Trouver la pièce suggérée pour l'adversaire
         let suggestedPiece: Piece | null = null;
-        if (data.suggested_piece) {
+        if (data.suggested_piece !== null && data.suggested_piece !== undefined) {
           suggestedPiece = availablePieces.find(p => p.id === data.suggested_piece) || null;
           console.log('🎯 Found suggested piece:', suggestedPiece);
         }
